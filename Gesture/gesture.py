@@ -3,13 +3,18 @@ import mediapipe as mp
 import numpy as np
 import mysql.connector
 import datetime
+from firebase import firebase
+from datetime import datetime
+import time
+import pytz
+
 
 max_num_hands = 1
 gesture = {
     0: 'fist', 1: 'right', 2: 'two', 3: 'three', 4: 'four', 5: 'five',
-    6: 'left', 7: 'rock', 8: 'spiderman', 9: 'yeah', 10: 'ok'
+    6: 'left', 7: 'rock', 8: 'spiderman', 9: 'yeah', 10: 'ok', 11: 'back'
 }
-rps_gesture = {0: 'go', 5: 'stop', 6: 'left', 1: 'right', 8: 'mid'}
+rps_gesture = {0: 'go', 5: 'stop', 6: 'left', 1: 'right', 8: 'mid', 11:'back'}  # 우리가 사용할 제스처 라벨만 가져옴
 
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
@@ -19,7 +24,8 @@ hands = mp_hands.Hands(
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5)
 
-file = np.genfromtxt('gesture_train.csv', delimiter=',')
+# 제스처 인식 모델
+file = np.genfromtxt('gesture_train_fy.csv', delimiter=',')
 angle = file[:, :-1].astype(np.float32)
 label = file[:, -1].astype(np.float32)
 knn = cv2.ml.KNearest_create()
@@ -32,11 +38,19 @@ db = mysql.connector.connect(host='3.39.234.126', user='mincoding', password='12
 cur = db.cursor()
 
 prev_gesture = None
-prev_gesture_time = datetime.datetime.now()
-query_sent = False
+prev_gesture_time = datetime.now()
+query_sent = False  # 쿼리를 보냈는지 여부를 추적하는 변수
+
+
+korea_timezone = pytz.timezone("Asia/Seoul")
+# Project Host URL
+firebase_url = "https://kfcproject-cf35a-default-rtdb.firebaseio.com/"
+firebase = firebase.FirebaseApplication(firebase_url, None)
+
+
 
 def insertCommand(cmd_string, arg_string):
-    time = datetime.datetime.now()
+    time = datetime.now()
     is_finish = 0
 
     query = "insert into command(time, cmd_string, arg_string, is_finish) values (%s, %s, %s, %s)"
@@ -44,6 +58,16 @@ def insertCommand(cmd_string, arg_string):
 
     cur.execute(query, value)
     db.commit()
+
+    # Sending data to Firebase
+    current_time = datetime.now(korea_timezone)
+    time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
+    commandData = {
+        "cmd_string": cmd_string,
+        "arg_string": arg_string,
+        "is_finish": is_finish
+    }
+    firebase.put("/commandTable", time_str, commandData)
 
 while cap.isOpened():
     ret, img = cap.read()
@@ -84,7 +108,7 @@ while cap.isOpened():
                             org=(int(res.landmark[0].x * img.shape[1]), int(res.landmark[0].y * img.shape[0] + 20)),
                             fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=1, color=(255, 255, 255), thickness=2)
 
-                current_time = datetime.datetime.now()
+                current_time = datetime.now()
 
                 if rps_gesture[idx] != prev_gesture:
                     prev_gesture_time = current_time
@@ -93,7 +117,7 @@ while cap.isOpened():
 
                 time_diff = (current_time - prev_gesture_time).total_seconds()
 
-                if time_diff >= 1 and not query_sent:
+                if time_diff >= 0.3 and not query_sent:
                     insertCommand(rps_gesture[idx].upper(), "0")
                     query_sent = True
 
@@ -102,3 +126,4 @@ while cap.isOpened():
     cv2.imshow('Game', img)
     if cv2.waitKey(1) == ord('q'):
         break
+        
