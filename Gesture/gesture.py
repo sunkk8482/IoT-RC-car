@@ -9,6 +9,9 @@ import time
 import pytz
 
 
+
+
+
 max_num_hands = 1
 gesture = {
     0: 'fist', 1: 'right', 2: 'two', 3: 'three', 4: 'four', 5: 'five',
@@ -25,7 +28,7 @@ hands = mp_hands.Hands(
     min_tracking_confidence=0.5)
 
 # 제스처 인식 모델
-file = np.genfromtxt('gesture_train_fy.csv', delimiter=',')
+file = np.genfromtxt('gesture_train.csv', delimiter=',')
 angle = file[:, :-1].astype(np.float32)
 label = file[:, -1].astype(np.float32)
 knn = cv2.ml.KNearest_create()
@@ -33,9 +36,6 @@ knn.train(angle, cv2.ml.ROW_SAMPLE, label)
 
 cap = cv2.VideoCapture(0)
 
-db = mysql.connector.connect(host='3.39.234.126', user='mincoding', password='1234', database='minDB',
-                             auth_plugin='mysql_native_password')
-cur = db.cursor()
 
 prev_gesture = None
 prev_gesture_time = datetime.now()
@@ -47,6 +47,9 @@ korea_timezone = pytz.timezone("Asia/Seoul")
 firebase_url = "https://kfcproject-cf35a-default-rtdb.firebaseio.com/"
 firebase = firebase.FirebaseApplication(firebase_url, None)
 
+db = mysql.connector.connect(host='3.39.234.126', user='mincoding', password='1234', database='minDB',
+                             auth_plugin='mysql_native_password')
+cur = db.cursor()
 
 
 def insertCommand(cmd_string, arg_string):
@@ -58,16 +61,6 @@ def insertCommand(cmd_string, arg_string):
 
     cur.execute(query, value)
     db.commit()
-
-    # Sending data to Firebase
-    current_time = datetime.now(korea_timezone)
-    time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
-    commandData = {
-        "cmd_string": cmd_string,
-        "arg_string": arg_string,
-        "is_finish": is_finish
-    }
-    firebase.put("/commandTable", time_str, commandData)
 
 while cap.isOpened():
     ret, img = cap.read()
@@ -118,7 +111,7 @@ while cap.isOpened():
                 time_diff = (current_time - prev_gesture_time).total_seconds()
 
                 if time_diff >= 0.3 and not query_sent:
-                    insertCommand(rps_gesture[idx].upper(), "0")
+                    insertCommand(rps_gesture[idx], "0")
                     query_sent = True
 
             mp_drawing.draw_landmarks(img, res, mp_hands.HAND_CONNECTIONS)
@@ -126,4 +119,3 @@ while cap.isOpened():
     cv2.imshow('Game', img)
     if cv2.waitKey(1) == ord('q'):
         break
-        
